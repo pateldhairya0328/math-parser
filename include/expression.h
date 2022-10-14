@@ -7,36 +7,16 @@
 
 #pragma once
 
-#include <complex>
 #include <concepts>
 #include <iterator>
 #include <list>
+#include <stack>
 #include <string>
+
+#include "token.h"
 
 namespace parser
 {
-// Type of token; VAR = variable, CONST = constant value, BIN_OP = binary
-// operation, FUNC = function, OTHER_TYPE = everything else
-enum token_type { VAR, CONST, BIN_OP, FUNC, OTHER_TYPE };
-
-// Name of operation
-enum operation { L_BRACKET, R_BRACKET, ADD, SUB, NEG, MUL, DIV, POW, RE, IM, ABS, ARG, CONJ, EXP, LOG, COS, SIN, TAN, SEC, CSC, COT, ACOS, ASIN, ATAN, COSH, SINH, TANH, ACOSH, ASINH, ATANH, DERIV, NO_OP };
-
-/**
- * @brief Struct representing a single token of a math expression. A token can
- * be any single component in a math expression: a variable, a constant, a 
- * function, a symbol, etc.
- * 
- * @tparam The floating point type (float, double or long double) to use in 
- * the storing of values (if necessary) in the token. Defaults to double
-*/
-template<std::floating_point T = double>
-struct token 
-{
-    token_type type;     // Must always be set
-    operation op;        // NO_OP if token_type = VAR, CONST
-    std::complex<T> val; // Set only if token_type = VAR, CONST
-};
 
 /**
  * @brief Wrapper around std::list<token> that represents a math expression as 
@@ -60,6 +40,29 @@ private:
     
     // True if expression in postfix, False if expression in infix
     bool m_postfix;
+
+    /**
+     * @brief Helper function in interpreting input string. Finds end of 
+     * function name escaped using a \. 
+     * 
+     * @param input Input string to find end of function name in.
+     * @param n Index of where function name starts.
+     * @return Index of where function name ends.
+     * @throw If end index not found.
+    */
+    auto get_op_end_index(const std::string& input, size_t n) -> size_t
+    {
+        for (size_t i = n + 1; i < input.size(); i++)
+        {
+            if (input[i] == '\\' || input[i] == '-' || input[i] == '+' || input[i] == '*' || input[i] == '/' || input[i] == '^' || input[i] == '{' || input[i] == '(' || input[i] == '[') 
+            {
+                return i - 1;
+            }
+        }
+        
+        throw std::invalid_argument("Operation end index not found.");
+    }
+
 public:
     /**
      * @brief Initialize infix list of tokens from a string representing an 
@@ -72,11 +75,128 @@ public:
     */
     expr(const std::string& infix)
     {
-        throw std::logic_error("Not yet implemented.");
+        // Input with spaces removed
+        auto cleaned = infix;
+        std::string::iterator end_pos = std::remove(cleaned.begin(), cleaned.end(), ' ');
+        cleaned.erase(end_pos, cleaned.end());
+
+        for (size_t i = 0; i < cleaned.size(); i++)
+        {
+            // pre-defined operation escaped by \ found, so the token for the operation is made
+            if (cleaned[i] == '\\')
+            {
+                auto j = get_op_end_index(cleaned, i);
+                auto op_str = cleaned.substr(i + 1, j - i);
+                auto op = get_operation(op_str);
+                auto type = get_token_type(op);
+                m_expr.push_back({type, op});
+                i = j;
+            }
+            // negative sign found at start of expression, so NEG token pushed instead of SUB
+            else if (i == 0 && cleaned[i] == '-')
+            {
+                m_expr.push_back({FUNC, NEG});
+            }
+            // negative sign found immediately after bracket, so NEG token pushed instead of SUB
+            else if (i > 0 && cleaned[i] == '-' && (cleaned[i - 1] == '{' || cleaned[i - 1] == '('))
+            {
+                m_expr.push_back({FUNC, NEG});
+            }
+            // a number is found, so we look for the end of the number (i.e., the first non 0-9/. character)
+            else if (std::isdigit(cleaned[i]) || cleaned[i] == '.') {
+                bool period_found = false;
+                auto j = i;
+
+                while (j < cleaned.size() && (std::isdigit(cleaned[j]) || cleaned[j] == '.'))
+                {
+                    if (cleaned[j] == '.')
+                    {
+                        if (period_found)
+                        {
+                            throw std::invalid_argument("Invalid number formatting detected.");
+                        }
+                        else
+                        {
+                            period_found = true;
+                        }
+                    }
+                    j++;
+                }
+
+                auto num = std::stod(cleaned.substr(i, j - i));
+
+                if (j < cleaned.size() && cleaned[j] == 'i')
+                {
+                    m_expr.push_back({CONST, NO_OP, std::complex<T>(0, num)});
+                    j++;
+                }
+                else
+                {
+                    m_expr.push_back({CONST, NO_OP, num});
+                }
+
+                i = j - 1;
+            }
+            // a complex number [a,b] is found
+            else if (cleaned[i] == '[')
+            {
+                auto j = i + 1;
+
+                while (j < cleaned.size() && cleaned[j] != ',')
+                {
+                    j++;
+                }
+
+                auto re = std::stod(cleaned.substr(i + 1, j - i - 1));
+                auto k = j + 1;
+                
+                while (k < cleaned.size() && cleaned[k] != ']')
+                {
+                    k++;
+                }
+
+                auto im = std::stod(cleaned.substr(j + 1, k - j - 1));
+
+                m_expr.push_back({CONST, NO_OP, std::complex<T>(re, im)});
+
+                i = k;
+            }
+            // imaginary constant i found
+            else if (cleaned[i] == 'i')
+            {
+                m_expr.push_back({CONST, NO_OP, std::complex<T>(0, 1)});
+            }
+            // Euler's number i found
+            else if (cleaned[i] == 'e')
+            {
+                m_expr.push_back({CONST, NO_OP, std::complex<T>(2.71828182845904523536, 0)});
+            }
+            // pi found
+            else if (cleaned.substr(i, 2) == "pi")
+            {
+                m_expr.push_back({CONST, NO_OP, std::complex<T>(3.14159265358979323846, 0)});
+                i++;
+            }
+            // z found
+            else if (cleaned[i] == 'z')
+            {
+                m_expr.push_back({VAR, NO_OP, 0});
+            }
+            // +, -, *, /, (, ), {, } found
+            else 
+            {
+                auto op_str = cleaned.substr(i, 1);
+                auto op = get_operation(op_str);
+                auto type = get_token_type(op);
+                m_expr.push_back({type, op});
+            }
+        }
+    
+        m_postfix = false;
     }
 
     /**
-     * @brief Constructs expression by copying list of tokens.
+     * @brief Constructs expression by copying list of m_expr.
      * 
      * @param other List of tokens to copy.
      * @param postfix Indicates whether init represents a postfix expression.
@@ -90,7 +210,7 @@ public:
     {}
     
     /**
-     * @brief Constructs expression by moving list of tokens.
+     * @brief Constructs expression by moving list of m_expr.
      * 
      * @param other List of tokens to move.
      * @param postfix Indicates whether init represents a postfix expression.
@@ -104,7 +224,7 @@ public:
     {}
 
     /**
-     * @brief Initialize expr from initializer list of tokens.
+     * @brief Initialize expr from initializer list of m_expr.
      * 
      * @param init Initializer list of tokens representing a math expression.
      * @param postfix Indicates whether init represents a postfix expression.
@@ -157,7 +277,7 @@ public:
      * 
      * @return Copied instance of expr.
     */
-    expr& operator=(const expr& other)
+    auto operator=(const expr& other) -> expr&
     {
         return *this = expr(other);
     }
@@ -181,7 +301,7 @@ public:
      * 
      * @return Moved instance of expr.
     */
-    expr& operator=(expr&& other)
+    auto operator=(expr&& other) -> expr&
     {
         std::swap(m_expr, other.m_expr);
         std::swap(m_postfix, other.m_postfix);
@@ -192,21 +312,286 @@ public:
     /**
      * @brief Destructor.
     */
-    ~expr();
+    ~expr() = default;
 
-    // Add iterators and necessary iterator functions so the expr class
-    // essentially behaves like a wrapper around std::list<token>
-    using iterator = std::list<token<T>>::iterator;
+    /**
+     * @brief Returns an equivalent postfix expression.
+     * 
+     * @return expr equivalent in postfix.
+    */
+    auto postfix() const -> expr
+    {
+        // If expr already in postfix form, return it
+        if (m_postfix)
+        {
+            return *this;
+        }
+        
+        // Convert infix to postfix
+        std::list<token<T>> postfix;
+        std::stack<token<T>> stack;
 
-    using const_iterator = std::list<token<T>>::const_iterator;
+        for (auto& t: m_expr)
+        {
+            if (t.type == VAR || t.type == CONST)
+            {
+                postfix.push_back(t);
+            }
+            else if (t.type == FUNC)
+            {
+                stack.push(t);
+            }
+            else if (t.type == BIN_OP)
+            {
+                auto t_precedence = get_precedence(t.op);
 
-    iterator begin();
+                while (!stack.empty() && stack.top().op != L_BRACKET && get_precedence(stack.top().op) >= t_precedence)
+                {
+                    postfix.push_back(stack.top());
+                    stack.pop();
+                }
 
-    iterator end();
+                stack.push(t);
+            }
+            else if (t.op == L_BRACKET)
+            {
+                stack.push(t);
+            }
+            else if (t.op == R_BRACKET)
+            {
+                while (stack.top().op != L_BRACKET)
+                {
+                    if (stack.empty())
+                    {
+                        throw std::invalid_argument("Mismatched brackets in infix expression.");
+                    }
 
-    const_iterator cbegin() const;
+                    postfix.push_back(stack.top());
+                    stack.pop();
+                }
+
+                stack.pop();
+
+                if (stack.top().type == FUNC)
+                {
+                    postfix.push_back(stack.top());
+                    stack.pop();
+                }
+            }
+        }
+
+        while (!stack.empty())
+        {
+            if (stack.top().op == L_BRACKET)
+            {
+                throw std::invalid_argument("Mismatched brackets in infix expression.");
+            }
+
+            postfix.push_back(stack.top());
+            stack.pop();
+        }
+
+        return postfix;
+    }
+
+    /**
+     * @brief Evaluates a postfix expression.
+     * 
+     * @param postfix Vector of tokens representing a postfix math expression.
+     * @param z Value to evaluate expression at.
+    */
+    auto evaluate(std::complex<T> z) -> std::complex<T>
+    {
+        std::stack<std::complex<T>> eval_stack;
+        std::complex<T> temp1, temp2;
+
+        for (auto it = m_expr.begin(); it != m_expr.end(); it++)
+        {
+            if (it->type == CONST)
+            {
+                eval_stack.push(it->val);
+            }
+            else if (it->type == VAR)
+            {
+                eval_stack.push(z);
+            }
+            else if (it->type == FUNC)
+            {
+                temp1 = eval_stack.top();
+                eval_stack.pop();
+                eval_stack.push(get_func(it->op)(temp1));
+            }
+            else if (it->type == BIN_OP)
+            {
+                temp1 = eval_stack.top();
+                eval_stack.pop();
+                temp2 = eval_stack.top();
+                eval_stack.pop();
+                eval_stack.push(get_bin_op(it->op)(temp2, temp1));
+            }
+        }
+
+        temp1 = eval_stack.top();
+        eval_stack.pop();
+        return temp1;
+    }
+
+    // The following are simply wrapper functions around the contained list. See
+    // https://en.cppreference.com/w/cpp/container/list for documentaion of the 
+    // underlying functions.
+
+    // Element access
+
+    auto front()
+    {
+        return m_expr.front();
+    }
+
+    auto back()
+    {
+        return m_expr.back();
+    }
+
+    auto front() const
+    {
+        return m_expr.front();
+    }
+
+    auto back() const
+    {
+        return m_expr.back();
+    }
+
+    // Iterators
+
+    auto begin() noexcept
+    {
+        return m_expr.begin();
+    }
+
+    auto end() noexcept
+    {
+        return m_expr.end();
+    }
+
+    auto cbegin() const noexcept
+    {
+        return m_expr.cbegin();
+    }
     
-    const_iterator cend() const;
+    auto cend() const noexcept
+    {
+        return m_expr.cend();
+    }
+    
+    auto rbegin() noexcept
+    {
+        return m_expr.rbegin();
+    }
+
+    auto rend() noexcept
+    {
+        return m_expr.rend();
+    }
+
+    auto crbegin() const noexcept
+    {
+        return m_expr.crbegin();
+    }
+    
+    auto crend() const noexcept
+    {
+        return m_expr.crend();
+    }
+
+    // Capacity
+
+    [[nodiscard]] auto empty() const noexcept
+    {
+        return m_expr.empty();
+    }
+
+    auto size() const noexcept
+    {
+        return m_expr.size();
+    }
+
+    // Modifiers
+
+    auto clear() noexcept
+    {
+        m_expr.clear();
+    }
+
+    auto insert(auto pos, const auto& value)
+    {
+        return m_expr.insert(pos, value);
+    }
+    
+    auto insert(auto pos, auto&& value)
+    {
+        return m_expr.insert(pos, value);
+    }
+    
+    auto insert(auto pos, auto count, const auto& value)
+    {
+        return m_expr.insert(pos, count, value);
+    }
+    
+    auto insert(auto pos, auto first, auto second)
+    {
+        return m_expr.insert(pos, first, second);
+    }
+    
+    auto insert(auto pos, auto ilist)
+    {
+        return m_expr.insert(pos, ilist);
+    }
+
+    auto emplace(auto pos, auto&&... args)
+    {
+        return m_expr.emplace(pos, args...);
+    }
+    
+    auto push_back(const auto& value)
+    {
+        m_expr.push_back(value);
+    }
+    
+    auto push_back(auto&& value)
+    {
+        m_expr.push_back(value);
+    }
+
+    auto emplace_back(auto&&... args)
+    {
+        return m_expr.emplace_back(args...);
+    }
+
+    auto pop_back()
+    {
+        m_expr.pop_back();
+    }
+
+    auto push_front(const auto& value)
+    {
+        m_expr.push_front(value);
+    }
+    
+    auto push_front(auto&& value)
+    {
+        m_expr.push_front(value);
+    }
+
+    auto emplace_front(auto&&... args)
+    {
+        return m_expr.emplace_front(args...);
+    }
+
+    auto pop_front()
+    {
+        m_expr.pop_front();
+    }
 };
 
 };
