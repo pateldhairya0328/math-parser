@@ -20,8 +20,5 @@ CPMAddPackage(
 # All targets need access to the public header files.
 include_directories(include)
 
-# Add core library sources.
-add_subdirectory(core/src)
-
 # Add tests
-add_subdirectory(core/test)
+add_subdirectory(test)
