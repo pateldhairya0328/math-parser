@@ -1,7 +1,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "parser.h"
+#include "parser/parser.h"
+#include "parser/print.h"
 
 TEST(test, test)
 {

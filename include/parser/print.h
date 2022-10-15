@@ -1,6 +1,6 @@
 /**
  * @file print.h
- * @brief Contains operator overloads to print tokens and expressions
+ * @brief Contains operator overloads to print tokens and expressions.
  * 
  * @author Dhairya Patel
 */
@@ -9,8 +9,8 @@
 
 #include <iostream>
 
-#include "expression.h"
-#include "token.h"
+#include "parser/expression.h"
+#include "parser/token.h"
 
 namespace parser
 {
@@ -86,15 +86,16 @@ auto operator<<(std::ostream& os, const expr<T>& e) -> std::ostream&
 {
     os << "[";
 
-    for (auto it = e.cbegin(); it != e.cend(); it++)
+    auto last = e.cend();
+    last--;
+    for (auto it = e.cbegin(); it != last; it++)
     {
         os << *it << ' ';
     }
 
-    os << "]";
+    os << e.back() << "]";
 
     return os;
 }
-
 
 };
