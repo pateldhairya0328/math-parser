@@ -290,8 +290,8 @@ public:
      * @return Moved instance of expr.
     */
     expr(expr&& other) :
-        m_expr(std::exchange(other.m_expr, 0)),
-        m_postfix(std::exchange(other.postfix, 0))
+        m_expr(std::move(other.m_expr)),
+        m_postfix(std::exchange(other.m_postfix, 0))
     {}
 
     /**
@@ -442,6 +442,10 @@ public:
 
     // Element access
 
+    using iterator = typename std::list<token<T>>::iterator;
+    
+    using const_iterator = typename std::list<token<T>>::const_iterator;
+
     auto front()
     {
         return m_expr.front();
@@ -538,7 +542,8 @@ public:
         return m_expr.insert(pos, count, value);
     }
     
-    auto insert(auto pos, auto first, auto second)
+    template<std::input_iterator input_iter>
+    auto insert(auto pos, input_iter first, input_iter second)
     {
         return m_expr.insert(pos, first, second);
     }
