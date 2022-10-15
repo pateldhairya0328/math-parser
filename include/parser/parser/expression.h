@@ -65,6 +65,11 @@ private:
 
 public:
     /**
+     * @brief Default constructor.
+    */
+    expr() {};
+
+    /**
      * @brief Initialize infix list of tokens from a string representing an 
      *        infix expression.
      * 
@@ -315,6 +320,48 @@ public:
     ~expr() = default;
 
     /**
+     * @brief Evaluates a postfix expression.
+     * 
+     * @param postfix Vector of tokens representing a postfix math expression.
+     * @param z Value to evaluate expression at.
+    */
+    auto evaluate(std::complex<T> z) -> std::complex<T>
+    {
+        std::stack<std::complex<T>> eval_stack;
+        std::complex<T> temp1, temp2;
+
+        for (auto it = m_expr.begin(); it != m_expr.end(); it++)
+        {
+            if (it->type == CONST)
+            {
+                eval_stack.push(it->val);
+            }
+            else if (it->type == VAR)
+            {
+                eval_stack.push(z);
+            }
+            else if (it->type == FUNC)
+            {
+                temp1 = eval_stack.top();
+                eval_stack.pop();
+                eval_stack.push(get_func(it->op)(temp1));
+            }
+            else if (it->type == BIN_OP)
+            {
+                temp1 = eval_stack.top();
+                eval_stack.pop();
+                temp2 = eval_stack.top();
+                eval_stack.pop();
+                eval_stack.push(get_bin_op(it->op)(temp2, temp1));
+            }
+        }
+
+        temp1 = eval_stack.top();
+        eval_stack.pop();
+        return temp1;
+    }
+
+    /**
      * @brief Returns an equivalent postfix expression.
      * 
      * @return expr equivalent in postfix.
@@ -395,45 +442,62 @@ public:
     }
 
     /**
-     * @brief Evaluates a postfix expression.
+     * @brief Extracts the smallest legal subexpression of input postfix 
+     * expression that ends at one before element pointed to by @p end.
      * 
-     * @param postfix Vector of tokens representing a postfix math expression.
-     * @param z Value to evaluate expression at.
+     * The smallest legal subexpression is one that can be evaluated as a 
+     * correct mathematical expression by itself. For example [3 4 *] (equal to
+     * the infix [3 * 4]) is a legal subexpression of [5 3 4 * -] (equal to the
+     * infix [5 - (3 * 4)]). But, [4 *] is not, since its corresponding infix 
+     * [* 4] is not complete.
+     * 
+     * @tparam T Floating point type used by expression.
+     * @tparam iter Bidirectional iterator.
+     * 
+     * @param end Iterator to one after the last token of subexpression.
+     * 
+     * @return Bidirectional iterator pointing to first token of smallest legal
+     * subexpression that ends at @p end.
+     * 
+     * @warning Bidirectional iterator should point to type token<T>. 
+     * 
     */
-    auto evaluate(std::complex<T> z) -> std::complex<T>
+    template<std::bidirectional_iterator iter>
+    static auto subexpr_begin(iter end)
     {
-        std::stack<std::complex<T>> eval_stack;
-        std::complex<T> temp1, temp2;
-
-        for (auto it = m_expr.begin(); it != m_expr.end(); it++)
+        // The tokens for the subexpression in postfix must lie immediately to
+        // the left of the end token. A CONST or VAR token form a complete
+        // subexpression themselves. A FUNC token requires another 
+        // token to its left to complete it. A BIN_OP token requires two more
+        // tokens lying to its left to complete it. k tracks how many more
+        // tokens we need to complete the full subexpression. start tracks the
+        // tentative start iterator and decrements until k = 0, i.e., no
+        // more tokens needed to complete the subexpression.
+        auto start = end;
+        size_t k = 1;
+        while (k > 0)
         {
-            if (it->type == CONST)
+            // Decrement iterator to go to next token down
+            start--;
+
+            // If we encounter function, we need one more token to complete
+            // inside function
+            if (start->type == FUNC)
             {
-                eval_stack.push(it->val);
+                k += 1;
             }
-            else if (it->type == VAR)
+            // If we encounter binary operation, we need two more tokens to
+            // complete inside function
+            else if (start->type == BIN_OP)
             {
-                eval_stack.push(z);
+                k += 2;
             }
-            else if (it->type == FUNC)
-            {
-                temp1 = eval_stack.top();
-                eval_stack.pop();
-                eval_stack.push(get_func(it->op)(temp1));
-            }
-            else if (it->type == BIN_OP)
-            {
-                temp1 = eval_stack.top();
-                eval_stack.pop();
-                temp2 = eval_stack.top();
-                eval_stack.pop();
-                eval_stack.push(get_bin_op(it->op)(temp2, temp1));
-            }
+
+            // Subtract token we just read
+            k--;
         }
 
-        temp1 = eval_stack.top();
-        eval_stack.pop();
-        return temp1;
+        return start;
     }
 
     // The following are simply wrapper functions around the contained list. See
@@ -441,10 +505,6 @@ public:
     // underlying functions.
 
     // Element access
-
-    using iterator = typename std::list<token<T>>::iterator;
-    
-    using const_iterator = typename std::list<token<T>>::const_iterator;
 
     auto front()
     {

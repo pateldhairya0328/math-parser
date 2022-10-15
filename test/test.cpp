@@ -7,7 +7,7 @@
 
 TEST(test, test)
 {
-    auto infix = parser::expr<float>("\\sin(z)");
+    auto infix = parser::expr<float>("4.5^z");
     std::cout << infix << std::endl;
 
     auto postfix = infix.postfix();

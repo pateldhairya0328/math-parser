@@ -86,9 +86,7 @@ auto operator<<(std::ostream& os, const expr<T>& e) -> std::ostream&
 {
     os << "[";
 
-    auto last = e.cend();
-    last--;
-    for (auto it = e.cbegin(); it != last; it++)
+    for (auto it = e.cbegin(); it != std::prev(e.cend()); it++)
     {
         os << *it << ' ';
     }
